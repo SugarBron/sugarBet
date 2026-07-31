@@ -167,7 +167,7 @@
 </div>
 
 <script>
-  const clicksound
+  const clicksound = Clicking.mp3
   let balance = 1000.00;
   let gridSize = 5;
   let totalTiles = 25;
@@ -275,6 +275,9 @@
 
   function revealTile(index, tileEl) {
     if (!gameActive || tileEl.classList.contains('revealed')) return;
+
+    clickSound.currentTime = 0;
+    clickSound.play().catch(err => console.log("Audio play blocked:", err));
 
     if (bombPositions.has(index)) {
       // Hit a Bomb - Game Over
