@@ -1,0 +1,337 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Mines Game</title>
+  <style>
+    :root {
+      --bg-main: #0b0e14;
+      --bg-card: #151a24;
+      --bg-tile: #232a3b;
+      --bg-tile-hover: #2e374d;
+      --accent-blue: #0070f3;
+      --accent-green: #22c55e;
+      --accent-red: #ef4444;
+      --text-main: #f3f4f6;
+      --text-muted: #9ca3af;
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; }
+
+    body {
+      background-color: var(--bg-main);
+      color: var(--text-main);
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      min-height: 100vh;
+      padding: 20px;
+    }
+
+    .container {
+      display: grid;
+      grid-template-columns: 320px 1fr;
+      gap: 24px;
+      max-width: 1000px;
+      width: 100%;
+      background: var(--bg-card);
+      border-radius: 16px;
+      padding: 24px;
+      box-shadow: 0 10px 30px rgba(0,0,0,0.5);
+    }
+
+    @media (max-width: 768px) {
+      .container { grid-template-columns: 1fr; }
+    }
+
+    /* Controls Sidebar */
+    .controls { display: flex; flex-direction: column; gap: 20px; }
+    .balance-box { background: rgba(255,255,255,0.05); padding: 12px 16px; border-radius: 8px; font-weight: bold; }
+
+    .form-group { display: flex; flex-direction: column; gap: 8px; }
+    label { font-size: 0.85rem; color: var(--text-muted); font-weight: 600; text-transform: uppercase; }
+
+    input[type="number"], select {
+      background: var(--bg-main);
+      border: 1px solid rgba(255,255,255,0.1);
+      color: white;
+      padding: 12px;
+      border-radius: 8px;
+      font-size: 1rem;
+      outline: none;
+    }
+
+    .btn-group { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; }
+    .btn-size {
+      background: var(--bg-main);
+      border: 1px solid rgba(255,255,255,0.1);
+      color: white;
+      padding: 10px;
+      border-radius: 6px;
+      cursor: pointer;
+      font-weight: bold;
+    }
+    .btn-size.active { background: var(--accent-blue); border-color: var(--accent-blue); }
+
+    .action-btn {
+      background: var(--accent-green);
+      color: white;
+      border: none;
+      padding: 14px;
+      font-size: 1.1rem;
+      font-weight: bold;
+      border-radius: 8px;
+      cursor: pointer;
+      transition: opacity 0.2s;
+    }
+    .action-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+    .action-btn.cashout { background: #eab308; }
+
+    /* Main Board */
+    .board-container {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      background: var(--bg-main);
+      border-radius: 12px;
+      padding: 20px;
+      min-height: 450px;
+    }
+
+    .grid {
+      display: grid;
+      gap: 10px;
+      width: 100%;
+      max-width: 450px;
+      aspect-ratio: 1;
+    }
+
+    .tile {
+      background: var(--bg-tile);
+      border-radius: 8px;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 1.8rem;
+      transition: transform 0.1s, background 0.2s;
+      user-select: none;
+    }
+    .tile:hover:not(.revealed):not(.disabled) { background: var(--bg-tile-hover); transform: scale(1.02); }
+    .tile.revealed { background: #1a2333; cursor: default; }
+    .tile.bomb { background: rgba(239, 68, 68, 0.2); border: 2px solid var(--accent-red); }
+    .tile.gem { background: rgba(34, 197, 94, 0.2); border: 2px solid var(--accent-green); }
+
+    .status-msg { font-size: 1.1rem; font-weight: bold; height: 30px; margin-bottom: 10px; }
+  </style>
+</head>
+<body>
+
+<div class="container">
+  <!-- Left Side: Controls -->
+  <div class="controls">
+    <div class="balance-box">
+      Balance: $<span id="balance">1000.00</span>
+    </div>
+
+    <div class="form-group">
+      <label for="betAmount">Bet Amount</label>
+      <input type="number" id="betAmount" value="10" min="1">
+    </div>
+
+    <div class="form-group">
+      <label>Grid Size</label>
+      <div class="btn-group">
+        <button class="btn-size active" onclick="setGridSize(5, this)">5x5</button>
+        <button class="btn-size" onclick="setGridSize(6, this)">6x6</button>
+        <button class="btn-size" onclick="setGridSize(7, this)">7x7</button>
+        <button class="btn-size" onclick="setGridSize(8, this)">8x8</button>
+      </div>
+    </div>
+
+    <div class="form-group">
+      <label for="mineCount">Mines Count</label>
+      <input type="number" id="mineCount" value="3" min="1">
+    </div>
+
+    <button id="mainBtn" class="action-btn" onclick="handleMainAction()">Bet</button>
+  </div>
+
+  <!-- Right Side: Game Board -->
+  <div class="board-container">
+    <div class="status-msg" id="statusMsg">Set your bet and click Bet to start!</div>
+    <div class="grid" id="grid"></div>
+  </div>
+</div>
+
+<script>
+  let balance = 1000.00;
+  let gridSize = 5;
+  let totalTiles = 25;
+  let mineCount = 3;
+  let betAmount = 10;
+  let currentMultiplier = 1.0;
+  
+  let gameActive = false;
+  let bombPositions = new Set();
+  let revealedTiles = 0;
+
+  const gridEl = document.getElementById('grid');
+  const balanceEl = document.getElementById('balance');
+  const statusEl = document.getElementById('statusMsg');
+  const mainBtn = document.getElementById('mainBtn');
+
+  function updateGridCSS() {
+    gridEl.style.gridTemplateColumns = `repeat(${gridSize}, 1fr)`;
+    gridEl.style.gridTemplateRows = `repeat(${gridSize}, 1fr)`;
+  }
+
+  function setGridSize(size, btn) {
+    if (gameActive) return;
+    gridSize = size;
+    totalTiles = size * size;
+    document.querySelectorAll('.btn-size').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    
+    // Adjust maximum mines allowed based on grid size
+    const mineInput = document.getElementById('mineCount');
+    mineInput.max = totalTiles - 1;
+    if (parseInt(mineInput.value) >= totalTiles) {
+      mineInput.value = totalTiles - 1;
+    }
+    renderEmptyBoard();
+  }
+
+  function renderEmptyBoard() {
+    updateGridCSS();
+    gridEl.innerHTML = '';
+    for (let i = 0; i < totalTiles; i++) {
+      const tile = document.createElement('div');
+      tile.classList.add('tile', 'disabled');
+      gridEl.appendChild(tile);
+    }
+  }
+
+  function handleMainAction() {
+    if (!gameActive) {
+      startGame();
+    } else {
+      cashOut();
+    }
+  }
+
+  function startGame() {
+    betAmount = parseFloat(document.getElementById('betAmount').value);
+    mineCount = parseInt(document.getElementById('mineCount').value);
+
+    if (isNaN(betAmount) || betAmount <= 0 || betAmount > balance) {
+      statusEl.innerText = "Invalid bet amount!";
+      return;
+    }
+    if (isNaN(mineCount) || mineCount < 1 || mineCount >= totalTiles) {
+      statusEl.innerText = "Invalid mine count!";
+      return;
+    }
+
+    // Deduct bet
+    balance -= betAmount;
+    balanceEl.innerText = balance.toFixed(2);
+    
+    // Reset state
+    gameActive = true;
+    revealedTiles = 0;
+    currentMultiplier = 1.0;
+    bombPositions.clear();
+
+    // Generate Mines
+    while (bombPositions.size < mineCount) {
+      bombPositions.add(Math.floor(Math.random() * totalTiles));
+    }
+
+    // Update UI
+    mainBtn.innerText = "Cash Out ($0.00)";
+    mainBtn.classList.add('cashout');
+    statusEl.innerText = "Pick a tile!";
+
+    // Build Interactive Grid
+    updateGridCSS();
+    gridEl.innerHTML = '';
+    for (let i = 0; i < totalTiles; i++) {
+      const tile = document.createElement('div');
+      tile.classList.add('tile');
+      tile.addEventListener('click', () => revealTile(i, tile));
+      gridEl.appendChild(tile);
+    }
+  }
+
+  function calculateNextMultiplier() {
+    const remainingSafe = (totalTiles - mineCount) - revealedTiles;
+    const remainingTotal = totalTiles - revealedTiles;
+    return currentMultiplier * (remainingTotal / remainingSafe);
+  }
+
+  function revealTile(index, tileEl) {
+    if (!gameActive || tileEl.classList.contains('revealed')) return;
+
+    if (bombPositions.has(index)) {
+      // Hit a Bomb - Game Over
+      tileEl.classList.add('revealed', 'bomb');
+      tileEl.innerText = '💣';
+      endGame(false);
+    } else {
+      // Safe Tile
+      revealedTiles++;
+      currentMultiplier = calculateNextMultiplier();
+      tileEl.classList.add('revealed', 'gem');
+      tileEl.innerText = '💎';
+
+      const winAmount = (betAmount * currentMultiplier).toFixed(2);
+      mainBtn.innerText = `Cash Out ($${winAmount})`;
+      statusEl.innerText = `Multiplier: ${currentMultiplier.toFixed(2)}x`;
+
+      // Auto win if all safe tiles revealed
+      if (revealedTiles === totalTiles - mineCount) {
+        cashOut();
+      }
+    }
+  }
+
+  function cashOut() {
+    if (!gameActive || revealedTiles === 0) return;
+    const winAmount = betAmount * currentMultiplier;
+    balance += winAmount;
+    balanceEl.innerText = balance.toFixed(2);
+    statusEl.innerText = `Cashed out! You won $${winAmount.toFixed(2)}`;
+    endGame(true);
+  }
+
+  function endGame(isWin) {
+    gameActive = false;
+    mainBtn.innerText = "Bet";
+    mainBtn.classList.remove('cashout');
+
+    // Reveal remaining tiles
+    const tiles = gridEl.children;
+    for (let i = 0; i < totalTiles; i++) {
+      tiles[i].classList.add('disabled');
+      if (bombPositions.has(i)) {
+        tiles[i].classList.add('revealed', 'bomb');
+        tiles[i].innerText = '💣';
+      }
+    }
+
+    if (!isWin && revealedTiles === 0) {
+      statusEl.innerText = "Boom! You hit a mine on the first try.";
+    } else if (!isWin) {
+      statusEl.innerText = "Boom! Game Over.";
+    }
+  }
+
+  // Initial setup
+  renderEmptyBoard();
+</script>
+
+</body>
+</html>
