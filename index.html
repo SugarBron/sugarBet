@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Mines Game</title>
+  <title>Mines Game with Animations</title>
   <style>
     :root {
       --bg-main: #0b0e14;
@@ -15,6 +15,7 @@
       --accent-red: #ef4444;
       --text-main: #f3f4f6;
       --text-muted: #9ca3af;
+      --flip-duration: 0.5s;
     }
 
     * { box-sizing: border-box; margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; }
@@ -71,6 +72,7 @@
       border-radius: 6px;
       cursor: pointer;
       font-weight: bold;
+      transition: background 0.2s, border-color 0.2s;
     }
     .btn-size.active { background: var(--accent-blue); border-color: var(--accent-blue); }
 
@@ -83,7 +85,7 @@
       font-weight: bold;
       border-radius: 8px;
       cursor: pointer;
-      transition: opacity 0.2s;
+      transition: background 0.2s, opacity 0.2s;
     }
     .action-btn:disabled { opacity: 0.5; cursor: not-allowed; }
     .action-btn.cashout { background: #eab308; }
@@ -106,23 +108,78 @@
       width: 100%;
       max-width: 450px;
       aspect-ratio: 1;
+      perspective: 1000px; /* Essential for 3D flip */
     }
 
+    /* The main tile container */
     .tile {
-      background: var(--bg-tile);
-      border-radius: 8px;
+      position: relative;
+      background: transparent;
       cursor: pointer;
+      transition: transform 0.2s ease, box-shadow 0.2s ease;
+      transform-style: preserve-3d; /* Required for the flip child */
+    }
+
+    /* New hover animation for pre-click tension */
+    .tile:hover:not(.revealed):not(.disabled) {
+      transform: scale(1.05) translateY(-2px);
+      box-shadow: 0 5px 15px rgba(0,0,0,0.3);
+    }
+
+    /* The flipping inner container */
+    .tile-inner {
+      position: absolute;
+      width: 100%;
+      height: 100%;
+      transition: transform var(--flip-duration) cubic-bezier(0.4, 0, 0.2, 1);
+      transform-style: preserve-3d;
+    }
+
+    /* Back of the tile (the standard view) */
+    .tile-back, .tile-front {
+      position: absolute;
+      width: 100%;
+      height: 100%;
+      -webkit-backface-visibility: hidden; /* Hide the back when flipped */
+      backface-visibility: hidden;
+      border-radius: 8px;
       display: flex;
       align-items: center;
       justify-content: center;
       font-size: 1.8rem;
-      transition: transform 0.1s, background 0.2s;
-      user-select: none;
     }
-    .tile:hover:not(.revealed):not(.disabled) { background: var(--bg-tile-hover); transform: scale(1.02); }
-    .tile.revealed { background: #1a2333; cursor: default; }
-    .tile.bomb { background: rgba(239, 68, 68, 0.2); border: 2px solid var(--accent-red); }
-    .tile.gem { background: rgba(34, 197, 94, 0.2); border: 2px solid var(--accent-green); }
+
+    .tile-back {
+      background: var(--bg-tile);
+    }
+
+    /* Front of the tile (what is revealed) */
+    .tile-front {
+      transform: rotateY(180deg); /* Start flipped */
+    }
+
+    /* Flip animation trigger */
+    .tile.revealed .tile-inner {
+      transform: rotateY(180deg);
+    }
+
+    /* Revealed States */
+    .tile.gem .tile-front {
+      background: rgba(34, 197, 94, 0.15);
+      border: 2px solid var(--accent-green);
+      box-shadow: 0 0 15px rgba(34, 197, 94, 0.4);
+    }
+
+    .tile.bomb .tile-front {
+      background: rgba(239, 68, 68, 0.15);
+      border: 2px solid var(--accent-red);
+      box-shadow: 0 0 15px rgba(239, 68, 68, 0.4);
+    }
+
+    /* Utility */
+    .tile.disabled {
+      cursor: default;
+    }
 
     .status-msg { font-size: 1.1rem; font-weight: bold; height: 30px; margin-bottom: 10px; }
   </style>
@@ -167,7 +224,13 @@
 </div>
 
 <script>
-  const clickSound = new Audio('Clicking.mp3');
+  // Setup audio (Replace with your actual file URL if needed)
+  const clickSound = new Audio('Clicking.mp3'); 
+  // Add an explosion sound for dramatic effect
+  const explodeSound = new Audio('https://actions.google.com/sounds/v1/explosions/explosion_large.ogg');
+  // Add a generic win sound
+  const winSound = new Audio('https://actions.google.com/sounds/v1/cartoon/success_jingle.ogg');
+
   let balance = 1000.00;
   let gridSize = 5;
   let totalTiles = 25;
@@ -205,13 +268,39 @@
     renderEmptyBoard();
   }
 
+  // Updated to support the new 3D flip structure
+  function createTileElement(index, isActive) {
+    const tile = document.createElement('div');
+    tile.classList.add('tile');
+    if (!isActive) tile.classList.add('disabled');
+
+    const inner = document.createElement('div');
+    inner.classList.add('tile-inner');
+
+    const back = document.createElement('div');
+    back.classList.add('tile-back');
+
+    const front = document.createElement('div');
+    front.classList.add('tile-front');
+    // Set placeholder content (we fill this on reveal)
+    front.id = `tile-front-${index}`;
+
+    inner.appendChild(back);
+    inner.appendChild(front);
+    tile.appendChild(inner);
+
+    if (isActive) {
+        tile.addEventListener('click', () => revealTile(index, tile));
+    }
+    
+    return tile;
+  }
+
   function renderEmptyBoard() {
     updateGridCSS();
     gridEl.innerHTML = '';
     for (let i = 0; i < totalTiles; i++) {
-      const tile = document.createElement('div');
-      tile.classList.add('tile', 'disabled');
-      gridEl.appendChild(tile);
+      gridEl.appendChild(createTileElement(i, false));
     }
   }
 
@@ -260,17 +349,15 @@
     updateGridCSS();
     gridEl.innerHTML = '';
     for (let i = 0; i < totalTiles; i++) {
-      const tile = document.createElement('div');
-      tile.classList.add('tile');
-      tile.addEventListener('click', () => revealTile(i, tile));
-      gridEl.appendChild(tile);
+      gridEl.appendChild(createTileElement(i, true));
     }
   }
 
   function calculateNextMultiplier() {
     const remainingSafe = (totalTiles - mineCount) - revealedTiles;
     const remainingTotal = totalTiles - revealedTiles;
-    return currentMultiplier * (remainingTotal / remainingSafe);
+    // Payout formula based on risk
+    return currentMultiplier * (remainingTotal / remainingSafe) * 0.99; // 1% house edge factor
   }
 
   function revealTile(index, tileEl) {
@@ -279,17 +366,20 @@
     clickSound.currentTime = 0;
     clickSound.play().catch(err => console.log("Audio play blocked:", err));
 
+    const frontEl = document.getElementById(`tile-front-${index}`);
+
     if (bombPositions.has(index)) {
       // Hit a Bomb - Game Over
       tileEl.classList.add('revealed', 'bomb');
-      tileEl.innerText = '💣';
+      frontEl.innerText = '💣';
+      explodeSound.play();
       endGame(false);
     } else {
       // Safe Tile
       revealedTiles++;
       currentMultiplier = calculateNextMultiplier();
       tileEl.classList.add('revealed', 'gem');
-      tileEl.innerText = '💎';
+      frontEl.innerText = '💎';
 
       const winAmount = (betAmount * currentMultiplier).toFixed(2);
       mainBtn.innerText = `Cash Out ($${winAmount})`;
@@ -308,6 +398,7 @@
     balance += winAmount;
     balanceEl.innerText = balance.toFixed(2);
     statusEl.innerText = `Cashed out! You won $${winAmount.toFixed(2)}`;
+    winSound.play();
     endGame(true);
   }
 
@@ -316,13 +407,27 @@
     mainBtn.innerText = "Bet";
     mainBtn.classList.remove('cashout');
 
-    // Reveal remaining tiles
+    // Cascade reveal remaining tiles with a slight delay
     const tiles = gridEl.children;
     for (let i = 0; i < totalTiles; i++) {
       tiles[i].classList.add('disabled');
-      if (bombPositions.has(i)) {
-        tiles[i].classList.add('revealed', 'bomb');
-        tiles[i].innerText = '💣';
+      const tileEl = tiles[i];
+      const frontEl = document.getElementById(`tile-front-${i}`);
+
+      if (!tileEl.classList.contains('revealed')) {
+          // Fill content for unrevealed tiles before they cascade flip
+          if (bombPositions.has(i)) {
+              tileEl.classList.add('bomb');
+              frontEl.innerText = '💣';
+          } else {
+              tileEl.classList.add('gem');
+              frontEl.innerText = '💎';
+          }
+          
+          // Trigger the flip animation with a cascading delay
+          setTimeout(() => {
+              tileEl.classList.add('revealed');
+          }, i * 50); // 50ms cascade effect
       }
     }
 
